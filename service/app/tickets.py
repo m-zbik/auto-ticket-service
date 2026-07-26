@@ -37,7 +37,13 @@ def _build_issue_body(payload: TicketCreate) -> str:
         lines.append(f"- **{key}:** {value}")
     lines += ["", "### Description", payload.body or "(no description)"]
     if payload.screenshot_url:
-        lines += ["", "### Screenshot", f"![screenshot]({payload.screenshot_url})"]
+        # GitHub renders http(s) images but NOT data: URIs, and a base64 data URI
+        # would also blow past the ~65 KB issue-body limit. So embed real URLs and
+        # just note the attachment for data URIs (viewable in the service UI / API).
+        if payload.screenshot_url.startswith(("http://", "https://")):
+            lines += ["", "### Screenshot", f"![screenshot]({payload.screenshot_url})"]
+        else:
+            lines += ["", "_📎 Screenshot attached (captured in-app; view it via the service UI/API)._"]
     lines += [
         "",
         "---",

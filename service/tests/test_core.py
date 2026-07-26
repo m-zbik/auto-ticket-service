@@ -54,3 +54,13 @@ def test_body_handles_empty_optional_fields():
     body = _build_issue_body(TicketCreate(title="Only title"))
     assert "(no description)" in body
     assert "Screenshot" not in body
+
+
+def test_body_does_not_embed_data_uri_screenshot():
+    # A captured screenshot arrives as a huge base64 data: URI. GitHub can't render
+    # it and it would blow the issue-body size limit, so it must be noted, not embedded.
+    data_uri = "data:image/png;base64," + "A" * 50000
+    body = _build_issue_body(TicketCreate(title="Bug", screenshot_url=data_uri))
+    assert data_uri not in body               # not embedded
+    assert "Screenshot attached" in body      # noted instead
+    assert len(body) < 1000                   # body stays small regardless of image size

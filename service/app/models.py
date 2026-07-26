@@ -42,7 +42,9 @@ class Ticket(Base):
     github_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="open")      # open | closed
 
-    screenshot_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Text, not a bounded varchar: a captured screenshot is stored as a base64
+    # data: URI (tens of thousands of chars), which overflows any small limit.
+    screenshot_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     meta: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
