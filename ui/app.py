@@ -82,9 +82,13 @@ with tab_issues:
             shot = t.get("screenshot_url")
             if shot:
                 # Screenshots arrive as data: URIs — decode to bytes so st.image
-                # renders them reliably; fall back to passing the URL as-is.
-                if shot.startswith("data:") and "base64," in shot:
-                    import base64
-                    st.image(base64.b64decode(shot.split("base64,", 1)[1]), width=320)
-                else:
-                    st.image(shot, width=320)
+                # renders them reliably. Guard against undecodable/corrupt images
+                # (e.g. a non-image blob) so one bad ticket can't break the feed.
+                try:
+                    if shot.startswith("data:") and "base64," in shot:
+                        import base64
+                        st.image(base64.b64decode(shot.split("base64,", 1)[1]), width=320)
+                    else:
+                        st.image(shot, width=320)
+                except Exception:
+                    st.caption("🖼️ (screenshot attached — preview unavailable)")
