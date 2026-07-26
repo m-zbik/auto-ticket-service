@@ -33,6 +33,10 @@ else:
 def widget_html(public_api_url: str) -> str:
     """Return the full HTML/JS for the bug-reporter widget, pointed at the given
     browser-reachable API base URL (e.g. http://localhost:8000)."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(public_api_url)
+    api_port = parsed.port or (443 if parsed.scheme == "https" else 80)
     return (
         HTML2CANVAS_TAG
         # NOTE: raw string — the JS below contains escape sequences like "\n" that
@@ -125,6 +129,7 @@ def widget_html(public_api_url: str) -> str:
 <div id="app">
   <h1>🏠 Acme Estates — Agent Dashboard</h1>
   <div class="sub">Mock host application. Tap the red 🐞 (bottom-right) to report a problem on this screen.</div>
+  <div id="conn" style="font-size:12px;margin-bottom:14px;color:#9aa0aa">Checking API connectivity…</div>
   <div class="cards">
     <div class="card"><div class="k">Active listings</div><div class="v">128</div><div class="d up">+4 this week</div></div>
     <div class="card"><div class="k">Leads this week</div><div class="v">37</div><div class="d up">+12%</div></div>
@@ -168,8 +173,36 @@ def widget_html(public_api_url: str) -> str:
 </div>
 
 <script>
-  const API = "__API_URL__";
+  // Resolve the API base. Prefer the host you're actually browsing (so it works
+  // whether that's localhost, 127.0.0.1, or a LAN IP / hostname), falling back to
+  // the server-injected URL if the parent location isn't readable.
+  const INJECTED = "__API_URL__";
+  let API = INJECTED;
+  try {
+    const loc = (window.parent && window.parent.location) || window.location;
+    if (loc && loc.hostname && loc.protocol.startsWith("http")) {
+      API = loc.protocol + "//" + loc.hostname + ":__API_PORT__";
+    }
+  } catch (e) { /* cross-origin parent — keep injected */ }
+  console.log("[bug-reporter] API base:", API, "(injected:", INJECTED + ")");
+
   const $ = (id) => document.getElementById(id);
+
+  // Connectivity self-test: can the BROWSER reach the API? Surfaces the exact
+  // problem right on the page (separate from any POST-specific issue).
+  fetch(API + "/health")
+    .then((r) => r.json())
+    .then((d) => {
+      $("conn").innerHTML = "✓ API reachable — mode <b>" + d.mode + "</b> · " + API;
+      $("conn").style.color = "#46c46e";
+    })
+    .catch((e) => {
+      $("conn").innerHTML = "✗ Browser cannot reach the API at <b>" + API +
+        "</b> — " + e + ". Send will fail until this resolves. " +
+        "(Open the UI on the same host as Docker, and check the API port.)";
+      $("conn").style.color = "#e5484d";
+      console.error("[bug-reporter] health check failed:", e);
+    });
   let category = "bug";
   let strokes = [];        // list of point-arrays; enables undo
   let cur = null;
@@ -298,5 +331,5 @@ def widget_html(public_api_url: str) -> str:
     }
   };
 </script>
-""".replace("__API_URL__", public_api_url.rstrip("/"))
+""".replace("__API_URL__", public_api_url.rstrip("/")).replace("__API_PORT__", str(api_port))
     )
