@@ -50,6 +50,12 @@ app.add_middleware(
     allow_origins=settings.cors_origin_list,
     allow_methods=["*"],
     allow_headers=["*"],
+    # A UI widget in a sandboxed iframe (e.g. a Streamlit component) has an opaque
+    # origin, which Chrome treats as a "public" address space. Its fetch to this
+    # service on localhost is then a public→private request, which Chrome blocks
+    # (surfacing as "TypeError: Failed to fetch") unless the preflight is answered
+    # with `Access-Control-Allow-Private-Network: true`. This opts in.
+    allow_private_network=True,
 )
 
 app.include_router(router)
