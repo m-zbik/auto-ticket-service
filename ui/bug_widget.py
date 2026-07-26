@@ -35,7 +35,11 @@ def widget_html(public_api_url: str) -> str:
     browser-reachable API base URL (e.g. http://localhost:8000)."""
     return (
         HTML2CANVAS_TAG
-        + """
+        # NOTE: raw string — the JS below contains escape sequences like "\n" that
+        # must reach the browser verbatim. A normal string would turn "\n" into a
+        # real newline, splitting a JS string literal across lines and breaking the
+        # entire <script> (so nothing would work).
+        + r"""
 <style>
   * { box-sizing: border-box; }
   #app {
