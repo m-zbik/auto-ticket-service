@@ -14,7 +14,17 @@ It runs **out of the box with no GitHub credentials** (mock mode), so you can de
 
 ## 🤖 Set this up with Claude Code (copy-paste)
 
-> **New developer? Paste the block below into [Claude Code](https://claude.com/claude-code) from the repo root.** It gives the LLM everything it needs to stand the service up and integrate the bug icon into *your* app.
+> **New developer?** Paste one of the prompts below into [Claude Code](https://claude.com/claude-code). Pick by what you want:
+>
+> | Prompt | Use it when you want to… |
+> |--------|--------------------------|
+> | **A — Stand up this repo** | Run the service as-is and add the bug icon to *this* repo's UI. Start here to try it. |
+> | **B — Integrate into an existing app** | Deploy this service alongside your own app and wire the bug icon into your existing frontend/backend. |
+> | **C — Build it from scratch into your codebase** | Re-implement the service natively inside your existing stack (your backend, your DB, your conventions) using this repo as the reference spec. |
+>
+> B and C carry the hard-won gotchas (screenshot column must be unbounded, CORS private-network, no `data:` URIs in issue bodies, browser-reachable API URL) so your LLM doesn't rediscover them.
+
+### Prompt A — stand up this repo and add the icon to its UI
 
 ````text
 You are setting up the "auto-ticket-service" in this repository. It is a web
@@ -54,6 +64,126 @@ Do the following, in order:
 
 Constraints: keep the service itself unmodified unless I ask for a feature change.
 Treat GITHUB_TOKEN as a secret — never print it or write it into committed files.
+````
+
+### Prompt B — integrate this service into an existing app
+
+> Run this from **your existing project's** repo root. It has `auto-ticket-service`
+> available as a sibling folder, a git submodule, or a cloned path — tell the LLM where.
+
+````text
+You are integrating the "auto-ticket-service" (a web service that raises a GitHub
+issue from any UI) into THIS existing application. The service's source is available
+at: <PATH-OR-URL to auto-ticket-service — e.g. ../auto-ticket-service>.
+
+Do the following, in order. Ask me before any step you're unsure about; do not commit
+or push unless I say so.
+
+1. Read, in the auto-ticket-service repo: README.md, docs/API.md, docs/INTEGRATION.md,
+   docs/ARCHITECTURE.md. The HTTP contract you'll use: POST /tickets (+ /tickets/multipart
+   for a screenshot), GET /tickets, GET /tickets/new, GET /health.
+
+2. Inspect THIS project first and report back before writing code:
+   - the frontend framework(s) (package.json, *.swift, templates) and where a global
+     overlay/component can live so a bug icon shows on every screen;
+   - how this project runs locally (docker-compose? a dev server?) and how it manages
+     secrets and env vars;
+   - the origin(s) the UI is served from (for CORS).
+
+3. Deploy the service next to this app:
+   - If this project uses docker-compose, add the service's `db` + `api` services to it
+     (copy from auto-ticket-service/docker-compose.yml). Reuse this project's Postgres if
+     it has one (point DATABASE_URL at a separate database/schema), else add the provided db.
+   - Configure it: MOCK_GITHUB=false, GITHUB_TOKEN (a PAT with Issues: read & write, from
+     this project's secret store — never hardcoded), GITHUB_REPO=<owner/name>.
+   - Set the API's CORS_ORIGINS to this UI's exact origin(s), not "*".
+   - Verify GET /health shows {"mode":"github", "repo": ...}.
+
+4. Add the bug reporter to THIS app's UI:
+   - Add a floating bug icon on every screen, following docs/INTEGRATION.md for the
+     framework you found. Prefer the screenshot+annotate flow (html2canvas capture → draw
+     with a marker → send) from ui/bug_widget.py; fall back to a simple form where that
+     doesn't fit.
+   - On send, POST to the service with {title, body, category, source:"<this-app>",
+     reporter, meta:{route, app_version, ...}} and, if a screenshot, the /tickets/multipart
+     endpoint.
+   - Point the client at the service via a BROWSER-REACHABLE URL from config/env (e.g.
+     TICKET_API), never an internal Docker hostname and never hardcoded.
+
+5. (Optional) If this app has an admin/dashboard, add a "new issues" feed by polling
+   GET /tickets/new?since=<last-check>.
+
+6. Smoke-test end to end: raise a ticket from the UI, confirm a real GitHub issue opens
+   and the returned link works. Then show me a diff of everything you changed and the
+   commands to run it.
+
+Watch out for (these are real, already-solved issues in the service — keep them working):
+   - Post from the browser to a browser-reachable API URL; internal hostnames won't resolve
+     in the user's browser.
+   - If the icon renders inside a sandboxed iframe (e.g. a Streamlit/embedded component),
+     the API needs CORS allow_private_network=True or Chrome blocks localhost with
+     "TypeError: Failed to fetch".
+   - Treat GITHUB_TOKEN as a secret; keep it server-side only.
+````
+
+### Prompt C — build the service from scratch inside your existing solution
+
+> Use this when you don't want a separate service — you want the same capability
+> implemented natively in your existing backend, DB, and conventions, with this repo
+> as the reference spec.
+
+````text
+You are ADDING an "auto-ticket" capability to THIS existing solution: report a bug from
+any UI and it opens a GitHub issue, plus auto-discover issues opened on GitHub. Do NOT
+run the reference repo as a separate service — re-implement it natively in this codebase,
+matching our language, framework, DB, and conventions. Use the reference implementation at
+<PATH-OR-URL to auto-ticket-service> as the spec to port from.
+
+Do the following, in order. Report findings before writing code; don't commit/push unless
+I say so.
+
+1. Study the reference so you can port it faithfully:
+   - docs/API.md and docs/ARCHITECTURE.md (the contract + design),
+   - service/app/github.py     (GitHub REST client + a MOCK mode — port both),
+   - service/app/tickets.py     (create-ticket + sync-from-GitHub logic),
+   - service/app/models.py, schemas.py, routes.py, poller.py,
+   - ui/bug_widget.py           (the screenshot+annotate bug widget).
+
+2. Study THIS solution and propose a plan before coding:
+   - the backend framework and where HTTP routes live;
+   - the database and migration tool (so tickets get a proper migration, not create_all);
+   - the frontend framework and where a global bug icon can mount;
+   - config/secret handling and how background tasks run here (native scheduler vs. an
+     asyncio loop).
+
+3. Implement, natively in this codebase:
+   - A `tickets` table/model. IMPORTANT: the screenshot column must be an UNBOUNDED text
+     type — a captured screenshot is a base64 data: URI of tens of thousands of chars; a
+     varchar(N) will overflow (this bit the reference implementation). Add it via this
+     project's migration system.
+   - A GitHub issues client with: idempotent label-ensure, best-effort discipline (NEVER
+     let issue creation raise into the request — store the ticket regardless), and a MOCK
+     mode gated on a config flag / missing token so the whole thing runs with no credentials.
+   - Endpoints mirroring the contract: POST /tickets (+ multipart for a screenshot),
+     GET /tickets, GET /tickets/{id}, GET /tickets/new, GET /health. Register static routes
+     before parameterized ones.
+   - When building the GitHub issue body, do NOT embed a data: URI screenshot (GitHub can't
+     render it and it can exceed the ~65 KB body limit) — note the attachment and embed only
+     real http(s) image URLs.
+   - A background poller that syncs open GitHub issues into the table, de-duped by issue
+     number, exposed via GET /tickets/new.
+   - CORS for the UI origin. If the icon can render in a sandboxed iframe, enable
+     private-network access on preflight (the "TypeError: Failed to fetch" gotcha).
+
+4. Add the bug icon to this app's UI (screenshot capture → draw → send), pointed at the new
+   endpoints via a browser-reachable, env-configured URL.
+
+5. Add tests matching ours (credential-free: mock GitHub client + issue-body builder), and
+   smoke-test end to end against a real repo (MOCK off) — confirm an issue opens and its link
+   works. Show me the plan first, then the diff.
+
+Config: MOCK flag, GITHUB_TOKEN (secret, server-side only), GITHUB_REPO, poll interval,
+CORS origins — all from this project's config system, nothing hardcoded.
 ````
 
 ---
