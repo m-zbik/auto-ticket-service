@@ -1,0 +1,65 @@
+# Full stack: Postgres (issue store) + FastAPI service + Streamlit demo UI.
+#
+#   docker compose up --build
+#     UI    → http://localhost:8501
+#     API   → http://localhost:8000/docs
+#
+# Runs in MOCK_GITHUB mode by default (no credentials needed). To hit real GitHub,
+# copy .env.example to .env, set GITHUB_TOKEN + GITHUB_REPO, and MOCK_GITHUB=false.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tickets
+      POSTGRES_PASSWORD: tickets
+      POSTGRES_DB: tickets
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tickets -d tickets"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+
+  api:
+    build: ./service
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://tickets:tickets@db:5432/tickets
+      # --- GitHub (defaults keep the stack offline-runnable) ---
+      MOCK_GITHUB: "${MOCK_GITHUB:-true}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      GITHUB_REPO: "${GITHUB_REPO:-owner/repo}"
+      POLL_ENABLED: "${POLL_ENABLED:-true}"
+      POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-60}"
+      CORS_ORIGINS: "*"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+  ui:
+    build: ./ui
+    ports:
+      - "${UI_PORT:-8501}:8501"
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  pgdata:
