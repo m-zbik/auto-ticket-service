@@ -164,6 +164,38 @@ presents the form) is exactly the iOS `FeedbackButton`/`FeedbackFormView` patter
 
 ---
 
+## Screenshot + annotate (the iOS-style flow)
+
+The most useful reports include a **screenshot with the problem circled** — the iOS
+app captures the screen and lets the user draw on it (PencilKit marker) before
+sending. You can do the same on the web with zero manual upload:
+
+1. On bug-icon click, capture the current screen with **[html2canvas](https://html2canvas.hertzen.com/)** (`html2canvas(document.body)`), which renders the DOM to a `<canvas>`.
+2. Show that canvas in an overlay and let the user **draw** on it (freehand strokes via Pointer Events — works for mouse and touch).
+3. `canvas.toBlob(...)` the composited image and POST it to `/tickets/multipart` as the `screenshot` field. **No file picker.**
+
+A complete, framework-free implementation is in **[`ui/bug_widget.py`](../ui/bug_widget.py)** —
+it's plain HTML/JS you can lift into any host page. The core send:
+
+```js
+canvas.toBlob((blob) => {
+  const fd = new FormData();
+  fd.append("title", title);
+  fd.append("body", description);
+  fd.append("category", category);          // bug | idea | improvement
+  fd.append("source", "web-app");
+  fd.append("meta", JSON.stringify({ screen: location.pathname, annotated: true }));
+  fd.append("screenshot", blob, "annotated.png");
+  fetch(`${API_URL}/tickets/multipart`, { method: "POST", body: fd });
+}, "image/png");
+```
+
+> **Note (Streamlit specifics):** a Streamlit component runs in a sandboxed iframe and
+> can't screenshot the host page, so the demo widget renders the mock app screen
+> *inside itself* and captures that. In a normal web app (React, plain HTML, etc.)
+> html2canvas captures the real page directly. Also pass a **browser-reachable** API
+> URL (e.g. `http://localhost:8000`), not an internal Docker hostname.
+
 ## From a backend (server-to-server)
 
 Anything server-side can raise tickets too — e.g. turn an unhandled exception into an issue.

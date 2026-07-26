@@ -54,7 +54,8 @@ services:
     ports:
       - "${UI_PORT:-8501}:8501"
     environment:
-      API_URL: http://api:8000
+      API_URL: http://api:8000                              # this container → api
+      PUBLIC_API_URL: "http://localhost:${API_PORT:-8000}"  # user's browser → published api port
     depends_on:
       api:
         condition: service_healthy

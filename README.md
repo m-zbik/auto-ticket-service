@@ -5,7 +5,7 @@ callable from *any* UI and *any* backend with a single HTTP request. It ships wi
 
 - a **FastAPI service** (`/service`) that opens GitHub issues and stores every ticket in Postgres,
 - a **background poller** that auto-discovers issues opened directly on GitHub ("new issues" feed),
-- a **Streamlit demo UI** (`/ui`) showing the reusable **floating 🐞 bug icon** (the same idea as the iOS ladybug button) embedded in a mock host app,
+- a **Streamlit demo UI** (`/ui`) showing the reusable **floating 🐞 bug icon** that **captures a screenshot of the screen and lets you draw on it** (the same idea as the iOS ladybug + PencilKit flow) — no file upload,
 - **Docker + docker-compose** wiring all of it — service, UI, and database — into `docker compose up`.
 
 It runs **out of the box with no GitHub credentials** (mock mode), so you can demo the whole flow offline, then flip one flag to hit a real repo.
@@ -71,9 +71,11 @@ docker compose up --build     # builds service + UI, starts Postgres
 | API — Swagger docs | http://localhost:8000/docs |
 | API — health/mode | http://localhost:8000/health |
 
-Click the red **🐞** button at the bottom-right of the UI, fill in the form, and hit
-**Send**. In mock mode a fake issue (`#1001`, …) is created and stored; open the
-**Issues feed** tab to see it.
+Tap the red **🐞** button at the bottom-right (exactly like the iOS ladybug flow):
+it **screenshots the current screen**, lets you **draw on it with a red marker** to
+circle the problem, then add a title/description and **Send** — no file upload. In
+mock mode a fake issue (`#1001`, …) is created with your annotated screenshot
+attached; open the **Issues feed** tab to see it.
 
 ### Point it at a real GitHub repo
 
@@ -138,7 +140,8 @@ auto-ticket-service/
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── ui/                      # Streamlit demo (mock host app + 🐞 FAB)
-│   ├── app.py
+│   ├── app.py               # page chrome + issues feed
+│   ├── bug_widget.py        # self-contained screenshot+draw+send widget (html2canvas)
 │   ├── Dockerfile
 │   └── requirements.txt
 └── docs/

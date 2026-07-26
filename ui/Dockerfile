@@ -8,6 +8,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=appuser:appuser . .
 
+# Vendor html2canvas so the screenshot feature works fully offline at runtime
+# (bug_widget.py inlines this file if present, else falls back to a CDN).
+ADD --chown=appuser:appuser \
+    https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js \
+    ./html2canvas.min.js
+
 USER appuser
 EXPOSE 8501
 
