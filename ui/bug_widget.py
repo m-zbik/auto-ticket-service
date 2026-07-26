@@ -87,8 +87,11 @@ def widget_html(public_api_url: str) -> str:
   #editor h3 { margin: 0 0 4px; font-size: 18px; }
   #editor .note { color: #9aa0aa; font-size: 13px; margin-bottom: 12px; }
   #canvas-wrap { position: relative; border: 1px solid #262a34; border-radius: 10px;
-                 overflow: hidden; background: #000; }
-  #draw { width: 100%; display: block; touch-action: none; cursor: crosshair; }
+                 overflow: auto; background: #000; text-align: center; max-height: 320px; }
+  /* Cap the *display* height so the form + Send button stay in view; the canvas
+     keeps its full resolution for the uploaded blob. max-width/height preserve aspect. */
+  #draw { display: block; margin: 0 auto; max-width: 100%; max-height: 300px;
+          touch-action: none; cursor: crosshair; }
   .row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
   .cat {
     flex: 1 1 30%; padding: 9px; border-radius: 9px; border: 1px solid #2c313c;
@@ -150,11 +153,11 @@ def widget_html(public_api_url: str) -> str:
       <div class="cat idea" data-cat="idea">💡 Idea</div>
       <div class="cat improvement" data-cat="improvement">🔧 Improvement</div>
     </div>
-    <input id="title" placeholder="Short title (required)" />
+    <input id="title" placeholder="Short title (optional — taken from the description if blank)" />
     <textarea id="desc" placeholder="What happened / what should change?"></textarea>
     <div class="btns">
       <button class="btn ghost" id="cancel">Cancel</button>
-      <button class="btn primary" id="send" disabled>Send</button>
+      <button class="btn primary" id="send">Send</button>
     </div>
     <div id="result"></div>
   </div>
@@ -178,8 +181,6 @@ def widget_html(public_api_url: str) -> str:
       category = el.dataset.cat;
     };
   });
-
-  $("title").oninput = () => { $("send").disabled = !$("title").value.trim(); };
 
   // --- open: capture screenshot, then show editor ---
   $("fab").onclick = async () => {
@@ -239,32 +240,58 @@ def widget_html(public_api_url: str) -> str:
   $("clear").onclick = () => { strokes = []; redraw(); };
   $("cancel").onclick = () => { $("editor").style.display = "none"; };
 
-  // --- send: composite (already on canvas) → multipart POST to the service ---
+  // --- send: composite (already on canvas) → POST to the service ---
   $("send").onclick = () => {
-    const btn = $("send"); btn.disabled = true; btn.textContent = "Sending…";
-    canvas.toBlob((blob) => {
-      const fd = new FormData();
-      fd.append("title", $("title").value.trim());
-      fd.append("body", $("desc").value);
-      fd.append("category", category);
-      fd.append("source", "streamlit-demo");
-      fd.append("meta", JSON.stringify({ screen: "Dashboard", annotated: strokes.length > 0 }));
-      fd.append("screenshot", blob, "annotated.png");
-      fetch(API + "/tickets/multipart", { method: "POST", body: fd })
-        .then((r) => r.json())
-        .then((d) => {
-          const link = d.github_url
-            ? ' <a href="' + d.github_url + '" target="_blank">' + (d.github_number ? "#" + d.github_number : "view") + "</a>"
-            : "";
-          $("result").innerHTML = "✅ Sent — issue raised." + link + " You can switch to the Issues feed tab and Refresh.";
-          btn.textContent = "Sent ✓";
-          setTimeout(() => { $("editor").style.display = "none"; btn.disabled = false; btn.textContent = "Send"; }, 2200);
-        })
-        .catch((err) => {
-          $("result").innerHTML = "⚠️ Could not send: " + err + " (is the API reachable at " + API + "?)";
-          btn.disabled = false; btn.textContent = "Send";
-        });
-    }, "image/png");
+    const btn = $("send");
+    // Title is optional — derive one so Send is never blocked.
+    const title = $("title").value.trim()
+      || $("desc").value.trim().split("\n")[0].slice(0, 80)
+      || "Bug report from the demo UI";
+    const body = $("desc").value;
+    const meta = { screen: "Dashboard", annotated: strokes.length > 0 };
+
+    btn.disabled = true; btn.textContent = "Sending…"; $("result").textContent = "";
+
+    const done = (d) => {
+      const link = d && d.github_url
+        ? ' <a href="' + d.github_url + '" target="_blank">' + (d.github_number ? "#" + d.github_number : "view") + "</a>"
+        : "";
+      $("result").innerHTML = "✅ Sent — issue raised." + link + " Open the Issues feed tab and Refresh.";
+      $("result").scrollIntoView({ block: "nearest" });
+      btn.textContent = "Sent ✓";
+      setTimeout(() => { $("editor").style.display = "none"; btn.disabled = false; btn.textContent = "Send"; }, 2400);
+    };
+    const fail = (err) => {
+      console.error("[bug-reporter] send failed:", err);
+      $("result").innerHTML = "⚠️ Could not send: " + err + " — API at " + API +
+        ". Check the browser console + that the api container is up.";
+      $("result").scrollIntoView({ block: "nearest" });
+      btn.disabled = false; btn.textContent = "Send";
+    };
+
+    // No-screenshot fallback keeps the report working even if the canvas can't
+    // produce a blob (e.g. tainted canvas / toBlob unsupported).
+    const postText = () =>
+      fetch(API + "/tickets", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body, category, source: "streamlit-demo", meta }),
+      }).then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(done).catch(fail);
+
+    try {
+      canvas.toBlob((blob) => {
+        if (!blob) { postText(); return; }
+        const fd = new FormData();
+        fd.append("title", title); fd.append("body", body);
+        fd.append("category", category); fd.append("source", "streamlit-demo");
+        fd.append("meta", JSON.stringify(meta));
+        fd.append("screenshot", blob, "annotated.png");
+        fetch(API + "/tickets/multipart", { method: "POST", body: fd })
+          .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+          .then(done).catch(fail);
+      }, "image/png");
+    } catch (e) {
+      postText();  // toBlob threw (tainted canvas) — send text-only
+    }
   };
 </script>
 """.replace("__API_URL__", public_api_url.rstrip("/"))

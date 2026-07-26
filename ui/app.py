@@ -49,7 +49,7 @@ tab_dash, tab_issues = st.tabs(["📊 Dashboard", "🆕 Issues feed"])
 
 with tab_dash:
     st.write("Tap the red 🐞 button, mark the problem on the screenshot, and send:")
-    components.html(widget_html(PUBLIC_API_URL), height=760, scrolling=False)
+    components.html(widget_html(PUBLIC_API_URL), height=820, scrolling=True)
 
 with tab_issues:
     st.subheader("Issues raised / discovered")
